@@ -1,0 +1,4 @@
+Collector/dump
+*.csv
+*.json
+*.txt

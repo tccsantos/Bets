@@ -2,5 +2,6 @@ Collector/dump
 *.csv
 *.json
 *.txt
+*.npy
 Imagens
 abacaxi.py

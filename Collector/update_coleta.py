@@ -135,12 +135,51 @@ class Mongo_writer():
 
         completed = sup["videos"]["video_id"] != video_id and video_completion
 
-        nextPage = sup["videos"]["nextPage"] if sup["videos"]["video_id"] != "" else ""
+        nextPage = sup["videos"]["nextPage"]
 
         return {
             "completed": completed,
             "video_completion": video_completion
         }, nextPage
+
+    def get_all_channels(self):
+
+        db = self.__client[self.__db]
+
+        return db.list_collection_names()
+
+    def get_channel_status(self, channel):
+
+        db = self.__client[self.__db]
+
+        channel_files = db[channel]
+        query = {"channel_controller": {"$exists": True}}
+        sup = channel_files.find_one(query)
+
+        if sup is None:
+            self.panic(f"Documento de apoio não encontrado em {channel}")
+
+        self.__actual_collection = channel
+
+        completed = sup["status"] == "COMPLETE"
+        channel_completion = sup["channel"]["status"] == "COMPLETE"
+        playlist_completion = sup["playlist"]["status"] == "COMPLETE"
+
+        playlist_id = sup["channel"]["playlist_id"]
+        videos_ids  = sup["playlist"]["videos_id"]
+        playlist_last_page = sup["playlist"]["nextPage"]
+        channel_id = sup["channel_id"]
+
+        return {
+            "completed"             : completed,
+            "channel_completion"    : channel_completion,
+            "playlist_completion"   : playlist_completion
+        }, {
+            "playlist_id"       : playlist_id,
+            "video_ids"         : videos_ids,
+            "playlist_last_page": playlist_last_page,
+            "channel_id"        : channel_id
+        }
 
     def new_channel(self, channel_id, channel_name: str, data: dict, playlist_id: str) -> bool:
 
@@ -201,6 +240,39 @@ class Mongo_writer():
         )
 
         return playlist
+
+    def update_playlist(self, video_ids: set[str]) -> None:
+        if self.__actual_collection is None:
+            self.panic("Sem coleção atual!! (437)")
+
+        db = self.__client[self.__db]
+        files = db[self.__actual_collection]
+
+        query = {"channel_controller": {"$exists": True}}
+        sup = files.find_one(query)
+
+        if sup is None:
+            self.panic(f"Onde está o documento de apoio da coleção {self.__actual_collection} (186)")
+
+        playlist = set(sup["playlist"]["videos_id"])
+
+        full = playlist.union(video_ids)
+
+        if len(video_ids.symmetric_difference(playlist)) <= 0:
+            return
+
+        playlist = list(full)
+
+        files.update_one(
+            {"_id": sup["_id"]},
+            {"$set": {
+                "playlist.videos_id": playlist,
+                "status": "INCOMPLETE"
+                }
+            }
+        )
+
+        return None
 
     def playlist_finish(self) -> bool:
         if self.__actual_collection is None:
@@ -294,11 +366,7 @@ class Mongo_writer():
 
         files.update_one(
             {"_id": sup["_id"]},
-            {"$set": {
-                "videos.video_id": "",
-                "videos.nextPage": ""
-                }
-            }
+            {"$set": {"videos.video_id": ""}}
         )
 
         self.__vulnerable_status = False
@@ -418,6 +486,10 @@ class Requester():
                 self.__change_key()
                 continue
 
+            if response.status_code == 404:
+                if data["error"]["errors"][0]["reason"] == "playlistNotFound":
+                    return {"my_error" : "playlistNotFound"}
+
             if not response.ok:
                 self.panic(f"A API falhou: {url} \n\n{data}")
 
@@ -435,9 +507,6 @@ def read_options() -> dict[str, str|bool]:
         description="Basic Usage", formatter_class=RawTextHelpFormatter
     )
     parser.add_argument(
-        "-i", "--input", help="Arquivo CSV com o id dos canais", required=True, default=""
-    )
-    parser.add_argument(
         "-k", "--apikey", help="Arquivo CSV com as chaves da API do YouTube", required=True, default=""
     )
     parser.add_argument(
@@ -446,22 +515,14 @@ def read_options() -> dict[str, str|bool]:
 
     argument = parser.parse_args()
 
-    if argument.input and argument.db_name and argument.apikey:
+    if argument.db_name and argument.apikey:
         status = True
 
     if not status:
         print("Maybe you want to use -h for help")
         status = False
 
-    return {"success": status, "input": argument.input, "api_key": argument.apikey, "db_name": argument.db_name}
-
-def read_video_ids(file: str) -> list[str]:
-
-    with open(file, "r", encoding='utf8') as arquivo:
-        aba = csv.reader(arquivo)
-        channel_ids = list(aba)
-    
-    return [channel_id[0] for channel_id in channel_ids]
+    return {"success": status, "api_key": argument.apikey, "db_name": argument.db_name}
 
 def get_data():
     data = read_options()
@@ -482,16 +543,8 @@ def get_data():
         print("Erro no envio dos dados, checar argumentos!")
         print(data)
         sys.exit(0)
-    
-    channel_file = data.get("input")
-    if not isinstance(channel_file, str):
-        print("Erro no envio dos dados, checar argumentos!")
-        print(data)
-        sys.exit(0)
-    
-    channel_ids = read_video_ids(channel_file)
 
-    return api_key, db_name, channel_ids
+    return api_key, db_name
 
 def channel_request(my_requester: Requester, channel_id: str) -> dict|None:
         
@@ -523,7 +576,7 @@ def channel_request(my_requester: Requester, channel_id: str) -> dict|None:
 
     except Exception as e:
         # my_requester.panic(f"Não consegui extrair o canal: {data}")
-        print("Erro Desconhecido")
+        print(f"Erro Desconhecido: {data}\n\n{e}")
         return None
 
 def playlist_request(my_requester: Requester, playlist_id: str, next_page: str | None = None):
@@ -543,7 +596,12 @@ def playlist_request(my_requester: Requester, playlist_id: str, next_page: str |
             next_page = data.get("nextPageToken")
             if next_page is None:
                 break
-            
+
+        except KeyError:
+            if data.get("my_error"):
+                break
+            else:
+                my_requester.panic(f"Erro ao extraír os dados da playlist: {data}")
 
         except Exception:
             my_requester.panic(f"Erro ao extraír os dados da playlist: {data}")
@@ -680,17 +738,19 @@ def my_mail(assunto: str, texto: str) -> None:
 
 def main():
 
-    api_key, db_name, channel_ids = get_data()
+    api_key, db_name = get_data()
 
     writer = Mongo_writer(db_name)
 
     my_requester = Requester(api_key, writer)
 
-    total = len(channel_ids)
+    channels = writer.get_all_channels()
+
+    total = len(channels)
     actual = 0
     checkpoints = {0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100}
 
-    for channel_id in channel_ids:
+    for channel in channels:
         try:
             print(f"\n\tTotal feito: {actual * 100 /total : .2f}%\n")
             actual += 1
@@ -698,73 +758,38 @@ def main():
             check = (actual * 100) // total
 
             if check in checkpoints:
-                my_mail(
-                    assunto="Quanto já foi feito do seu trabalho",
-                    texto=f"Oi, Thiago!\n\nEstou passando para te falar que seu trabalho está {actual * 100 /total : .2f}%.\n\nContinuarei dando o meu melhor para terminar logo.\n\nAtenciosamente, seu código."
-                )
+                # my_mail(
+                #     assunto="Quanto já foi feito do seu trabalho",
+                #     texto=f"Oi, Thiago!\n\nEstou passando para te falar que seu trabalho está {actual * 100 /total : .2f}%.\n\nContinuarei dando o meu melhor para terminar logo.\n\nAtenciosamente, seu código."
+                # )
                 checkpoints.discard(check)
 
-            status, params = writer.check_channel_completion(channel_id)
+            status, params = writer.get_channel_status(channel)
 
-            if status["completed"]:
+            if not status["completed"]:
                 continue
             # print(status)
 
             if status["channel_completion"]:
                 playlist_id = params["playlist_id"]
-                name = None
             else:
-                channel = channel_request(my_requester, channel_id)
-                if channel is None:
+                writer.panic(f"{channel} não está completo!! Cadê o id da playlist")
+
+            playlist = set(playlist_request(my_requester, playlist_id))
+
+            if len(playlist) == 0:
+                channel_id = params["channel_id"]
+                channel_data = channel_request(my_requester, channel_id)
+                if channel_data is None:
                     continue
 
-                playlist_id = channel["contentDetails"]["relatedPlaylists"]["uploads"]
-                name = normalize(channel["snippet"]["title"])
-                writer.new_channel(channel_id, name, channel, playlist_id)
+                playlist_id = channel_data["contentDetails"]["relatedPlaylists"]["uploads"]
+                playlist = set(playlist_request(my_requester, playlist_id))
+                if len(playlist) == 0:
+                    writer.panic(f"{channel}: Onde está a playlist?????")
 
-            if status["playlist_completion"]:
-                video_ids: list[str] = params["video_ids"]
-            else:
-                playlist = playlist_request(my_requester, playlist_id, params["playlist_last_page"])
-                video_ids = writer.add_playlist(playlist)
-                writer.playlist_finish()
+            writer.update_playlist(playlist)
 
-            i = 0
-            try:
-                size = len(video_ids)//10
-                if not size:
-                    size += 1
-            except:
-                size = 50
-
-            for video_id in video_ids:
-                status, next_page = writer.check_video_completion(video_id)
-                i += 1
-
-                try:
-                    if not i%size:
-                        if name is None:
-                            print("Ainda processando vídeos do último canal")
-                        else:
-                            print(f"Ainda processando vídeos do canal {name}")
-                except Exception:
-                    pass
-
-                if status["completed"]:
-                    continue
-
-                if not status["video_completion"]:
-                    video = video_request(my_requester, video_id)
-                    if video is None:
-                        continue
-                    writer.add_video(video, video_id)
-
-                comments = comments_request(my_requester, video_id, next_page)
-                # print(type(comments))
-                writer.add_comments(comments)
-                writer.video_finish()
-
-            writer.channel_completion()
 
         except Exception as e:
             my_mail(assunto = "Erro de continuidade", texto = f"Pulei um canal inteiro porque algo aconteceu\n: {e}")
@@ -772,9 +797,4 @@ def main():
 
 
 if __name__ == "__main__":
-    for i in range(3):
-        try:
-            main()
-        except Exception as e:
-            my_mail(assunto = "Erro desconhecido", texto = f"Algo me parou, perdão. Pelo menos o senhor poderá ver o erro: {e}")
-        my_mail(assunto="Repetição", texto=f"Repetindo pela {i+1} vez")
+    main()

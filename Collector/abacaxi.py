@@ -1,4 +1,7 @@
+import os
 import requests
+import asyncio
+from time import sleep
 
 from Apoio.my_mongo import get_all_collections_name_mongo, get_collection_mongo
 
@@ -60,5 +63,35 @@ def aba():
 
         process_batch(collection)
 
+def caminhos():
+    dir = "/home/cortex2/Documentos/DMSO/Bets/Imagens"
+    name = "-0A6GPX7mNs"
+    caminho = dir + "/" + name + ".jpg"
+
+    if os.path.exists(caminho):
+        print("Abacaxi")
+
+async def do_work():
+    print("Inicio")
+    await asyncio.sleep(2)
+    print("Fim")
+
+async def main():
+    task_1 = asyncio.create_task(do_work())
+    task_2 = asyncio.create_task(do_work())
+
+    await task_1
+    await task_2
+
+def soma():
+    a = 0
+    for i in range(4):
+        a += i
+
+    print(a)
+
 if __name__ == "__main__":
-    aba()
+    # aba()
+    # caminhos()
+    # asyncio.run(main())
+    soma()

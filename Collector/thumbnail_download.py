@@ -1,3 +1,4 @@
+import os
 import sys
 import requests
 import argparse
@@ -5,6 +6,9 @@ import argparse
 from argparse import RawTextHelpFormatter
 from pymongo.collection import Collection
 from Apoio.my_mongo import get_all_collections_name_mongo, get_collection_mongo
+
+downloaded = 0
+skipped = 0
 
 
 def read_options() -> dict[str, str|bool]:
@@ -56,13 +60,27 @@ def get_data():
 
 def download(url: str, dir: str, name: str) -> str|None:
     try:
-        resposta = requests.get(url)
-        resposta.raise_for_status()
+
+        global skipped
+        global downloaded
 
         caminho = dir + "/" + name + ".jpg"
 
+        if os.path.exists(caminho):
+            skipped += 1
+            return caminho
+
+        resposta = requests.get(url)
+        resposta.raise_for_status()
+
         with open(caminho, "wb") as arquivo:
             arquivo.write(resposta.content)
+
+        downloaded += 1
+        if skipped:
+            print(f"Proportion de downloads em relação ao total de vídeos: {downloaded * 100 /(skipped + downloaded) : .2f}%")
+        # else:
+        #     print("Download feito!!")
 
         return caminho
 

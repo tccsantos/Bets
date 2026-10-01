@@ -3,5 +3,8 @@ Collector/dump
 *.json
 *.txt
 *.npy
+*.pt
+*.parquet
+*.pyc
 Imagens
 abacaxi.py

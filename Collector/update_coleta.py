@@ -786,7 +786,9 @@ def main():
                 playlist_id = channel_data["contentDetails"]["relatedPlaylists"]["uploads"]
                 playlist = set(playlist_request(my_requester, playlist_id))
                 if len(playlist) == 0:
-                    writer.panic(f"{channel}: Onde está a playlist?????")
+                    # writer.panic(f"{channel}: Onde está a playlist?????")
+                    print(f"Canal {channel} não tem mais vídeos?!")
+                    continue
 
             writer.update_playlist(playlist)
 

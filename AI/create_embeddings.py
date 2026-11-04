@@ -8,7 +8,6 @@ from argparse import RawTextHelpFormatter
 from tqdm import tqdm
 from PIL import Image
 from pathlib import Path
-from ultralytics import YOLO
 from torchvision import models
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
@@ -135,23 +134,6 @@ def clip_settings(device):
 
     return clip, clip_processor
 
-def yolo_settings(device: str):
-
-    yolo = YOLO("yolo11n.pt")
-
-    yolo.model = yolo.model.to(device)
-    yolo.model.eval()
-
-    features = {}
-
-    def hook(module, inputs, output):
-        features["output"] = output
-
-    # Camada 10 = C2PSA, última camada do backbone
-    handle = yolo.model.model[10].register_forward_hook(hook)
-
-    return yolo, features, handle
-
 def resnet_process(device, resnet, images):
     images = images.to(device)
 
@@ -205,73 +187,7 @@ def clip_process(device, clip, clip_processor, images):
 
     return embeddings.cpu().numpy()
 
-def yolo_process(device, yolo, features, images):
-
-    with torch.no_grad():
-
-        # O Ultralytics faz o preprocessing das imagens,
-        # incluindo resize/letterbox.
-        yolo(
-            source=list(images),
-            verbose=False
-        )
-
-        feature_map = features["output"]
-
-        # [B, C, H, W] -> [B, C]
-        embeddings = feature_map.mean(
-            dim=(2, 3)
-        )
-
-        # Normalização L2
-        embeddings = torch.nn.functional.normalize(
-            embeddings,
-            p=2,
-            dim=1
-        )
-
-    return embeddings.cpu().numpy()
-
 def pipeline(device, loader):
-
-    yolo_embeddings = []
-    emb_yolo = None
-
-    yolo, yolo_features, yolo_handle = yolo_settings(device)
-
-    for images, batch_paths in tqdm(
-        loader,
-        total=len(loader),
-        desc="YOLO"
-    ):
-
-        emb_yolo = yolo_process(
-            device,
-            yolo,
-            yolo_features,
-            images
-        )
-
-        yolo_embeddings.append(emb_yolo)
-
-    yolo_embeddings = np.concatenate(
-        yolo_embeddings,
-        axis=0
-    )
-
-    np.save(
-        "embeddings_yolo.npy",
-        yolo_embeddings
-    )
-
-    yolo_handle.remove()
-
-    del yolo
-    del emb_yolo
-    del yolo_embeddings
-    del yolo_features
-
-    clear()
 
     paths = []
     resnet_inputs = None
@@ -361,42 +277,42 @@ def pipeline(device, loader):
     del clip_processor
     del clip_embeddings
 
-    # clear()
+    clear()
 
-    # dino_embeddings = []
-    # emb_dino = None
+    dino_embeddings = []
+    emb_dino = None
 
-    # dino, dino_processor = dino_settings(device)
+    dino, dino_processor = dino_settings(device)
 
-    # for images, batch_paths in tqdm(
-    #     loader,
-    #     total=len(loader),
-    #     desc="DINOv2"
-    # ):
+    for images, batch_paths in tqdm(
+        loader,
+        total=len(loader),
+        desc="DINOv2"
+    ):
 
-    #     emb_dino = dino_process(
-    #         device,
-    #         dino,
-    #         dino_processor,
-    #         images
-    #     )
+        emb_dino = dino_process(
+            device,
+            dino,
+            dino_processor,
+            images
+        )
 
-    #     dino_embeddings.append(emb_dino)
+        dino_embeddings.append(emb_dino)
 
-    # dino_embeddings = np.concatenate(
-    #     dino_embeddings,
-    #     axis=0
-    # )
+    dino_embeddings = np.concatenate(
+        dino_embeddings,
+        axis=0
+    )
 
-    # np.save(
-    #     "embeddings_dino.npy",
-    #     dino_embeddings
-    # )
+    np.save(
+        "embeddings_dino.npy",
+        dino_embeddings
+    )
 
-    # del dino
-    # del emb_dino
-    # del dino_processor
-    # del dino_embeddings
+    del dino
+    del emb_dino
+    del dino_processor
+    del dino_embeddings
 
     clear()
 
@@ -404,10 +320,10 @@ def pipeline(device, loader):
     print("Pipeline concluído")
     print("=" * 60)
 
-    # print(f"Imagens:  {len(paths)}")
-    # print(f"ResNet:   {resnet_embeddings.shape}")
-    # print(f"CLIP:     {clip_embeddings.shape}")
-    # print(f"DINOv2:   {dino_embeddings.shape}")
+    print(f"Imagens:  {len(paths)}")
+    print(f"ResNet:   {resnet_embeddings.shape}")
+    print(f"CLIP:     {clip_embeddings.shape}")
+    print(f"DINOv2:   {dino_embeddings.shape}")
 
 def settings(images_path: str):
 

@@ -32,7 +32,6 @@ from functools import partial
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from dotenv import load_dotenv
 
 class Mongo_writer():
 
@@ -641,13 +640,11 @@ def comments_request(my_requester: Requester, video_id: str, next_page: str | No
 
 def my_mail(assunto: str, texto: str) -> None:
 
-    load_dotenv()
-
     # Configurações do e-mail
-    email_remetente = os.getenv("EMAIL_REMETENTE")
+    email_remetente = "thiagocortez14@gmail.com"
     # Cole aqui a sua Senha de App de 16 dígitos (sem espaços)
-    senha_app = os.getenv("SENHA")
-    email_destinatario = os.getenv("EMAIL_DESTINATARIO")
+    senha_app = "adgx ytyk hrtn xdwy"
+    email_destinatario = "tccsantos@unifesp.br"
 
     # Criando a estrutura da mensagem
     msg = MIMEMultipart()

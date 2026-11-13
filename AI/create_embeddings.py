@@ -343,7 +343,6 @@ def settings(images_path: str):
 
     return device, loader
 
-
 def main():
 
     directory = get_data()

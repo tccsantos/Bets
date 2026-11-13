@@ -1,7 +1,9 @@
 import os
 import sys
+import shutil
 import requests
 import argparse
+import unicodedata
 
 from argparse import RawTextHelpFormatter
 from pymongo.collection import Collection
@@ -9,6 +11,7 @@ from Apoio.my_mongo import get_all_collections_name_mongo, get_collection_mongo
 
 downloaded = 0
 skipped = 0
+changed = 0
 
 
 def read_options() -> dict[str, str|bool]:
@@ -36,6 +39,10 @@ def read_options() -> dict[str, str|bool]:
 
     return {"success": status, "db_name": argument.db_name, "directory_name": argument.directory_name}
 
+def normalize(string: str):
+    normalized = unicodedata.normalize('NFD', string)
+    return normalized.encode('ascii', 'ignore').decode('utf8').casefold()
+
 def get_data():
     data = read_options()
         
@@ -58,16 +65,28 @@ def get_data():
 
     return db_name, dir
 
-def download(url: str, dir: str, name: str) -> str|None:
+def download(url: str, dir: str, collection_name: str, name: str) -> str|None:
     try:
 
         global skipped
         global downloaded
+        global changed
 
-        caminho = dir + "/" + name + ".jpg"
+        caminho = dir + "/" + normalize(collection_name) + "/" + name + ".jpg"
 
         if os.path.exists(caminho):
+            # input("uai")
             skipped += 1
+            return caminho
+
+        old_caminho = dir + "/" + name + ".jpg"
+
+        if os.path.exists(old_caminho):
+            if not changed % 10000:
+                print(f"Total de documentos movidos: {changed + 1}")
+            changed += 1
+            os.makedirs(dir + "/" + normalize(collection_name), exist_ok=True)
+            shutil.move(old_caminho, caminho)
             return caminho
 
         resposta = requests.get(url)
@@ -114,10 +133,12 @@ def process_batch(dir: str, collection: Collection, batch_size: int = 100) -> No
 
     query = {
         "kind": "youtube#video",
-        "thumbnail_path": {"$exists": False}
+        # "thumbnail_path": {"$exists": False}
     }
     
     cursor = collection.find(query).batch_size(batch_size)
+
+    erros_esperados = 0
 
     for doc in cursor:
         try:
@@ -131,7 +152,7 @@ def process_batch(dir: str, collection: Collection, batch_size: int = 100) -> No
                         continue
 
                     name = doc["id"]
-                    caminho = download(video_url, dir, name)
+                    caminho = download(video_url, dir, collection.name, name)
                     if caminho is None:
                         raise TypeError("Erro no download da Thumbnail")
 
@@ -147,6 +168,11 @@ def process_batch(dir: str, collection: Collection, batch_size: int = 100) -> No
 
                 case _:
                     raise TypeError("Erro na busca de vídeos")
+
+        except TypeError as _:
+            erros_esperados += 1 
+            if not erros_esperados % 100:
+                print(f"Quantidade de erros: {erros_esperados}")
 
         except Exception as e:
             print(f"Erro no documento {doc['_id']}: {e}")

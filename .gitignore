@@ -8,3 +8,5 @@ Collector/dump
 *.pyc
 Imagens
 abacaxi.py
+*.env
+*.png

@@ -4,8 +4,10 @@ import csv
 import json
 import requests
 import asyncio
+
 from time import sleep
 from collections import Counter
+from pprint import pprint
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -190,25 +192,62 @@ def shorts():
 
 def same_links():
 
+    def add_http(uri: str) -> str:
+        if not uri.startswith("http"):
+            uri = "http://" + uri
+        return uri
+
     with open("./Collector/bets_12_10_26_url.csv", 'r', encoding="utf8") as arquivo:
         aba = csv.reader(arquivo, delimiter=";")
         next(aba)
-        links = set(map(lambda x: x[2], aba))
+        links = set(map(add_http, map(lambda x: x[2], aba)))
 
-    with open("./Collector/OLD_url/12_10_26_db.json", 'r', encoding="utf8") as arquivo:
-        other_links = json.decoder.JSONDecoder().decode(arquivo.read())
+    with open("./Collector/urls/12_10_26_urlmap.json", 'r', encoding="utf8") as arquivo:
+        link_map: dict = json.decoder.JSONDecoder().decode(arquivo.read())
 
     not_in = 0
-    found = set()
+    found = 0
+    print(len(links))
+    print(len(link_map))
 
-    for link in other_links.keys():
-        if link not in links:
+    for key in link_map.keys():
+
+        if key not in links:
             not_in += 1
         else:
-            found.add(link)
+            found += 1
+            links.discard(key)
 
     print(not_in)
-    print(len(links.difference(found)))
+    print(found)
+    print(len(links))
+
+def shorts_proportion():
+    collections = get_all_collections_name_mongo("Hijacked")
+    
+    shorts_type = []
+
+    for collection_name in collections:
+
+        collection = get_collection_mongo(collection_name, "Hijacked")
+
+        cursor = collection.find().batch_size(100)
+
+        for doc in cursor:
+
+            if not doc.get("kind"):
+                continue
+            
+            match doc["kind"]:
+
+                case "youtube#video":
+                    shorts_type.append(doc["video_type"])
+                
+                case _:
+                    continue
+
+    c = Counter(shorts_type)
+    pprint(c.most_common())
 
 if __name__ == "__main__":
     # aba()
@@ -219,3 +258,4 @@ if __name__ == "__main__":
     # link_correction()
     # shorts()
     same_links()
+    # shorts_proportion()

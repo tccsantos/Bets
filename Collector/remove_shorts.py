@@ -1,6 +1,5 @@
 import os
 import re
-import csv
 import sys
 import json
 import argparse
@@ -9,8 +8,6 @@ import requests
 from tqdm import tqdm
 from pymongo import MongoClient
 from pymongo.collection import Collection
-from pymongo.database import Database
-from pprint import pprint
 
 
 def create_connection(host: str = "localhost", port: int = 27017) -> MongoClient:

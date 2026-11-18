@@ -29,6 +29,7 @@ for collection_name in get_all_collections_name_mongo("Hijacked"):
             "video_id": doc.get("id"),
             "dataset": doc.get("dataset", "regular"),
             "publishedAt": snippet.get("publishedAt"),
+            "type": doc.get("video_type", "Desconhecido"),
 
             "views": int(stats.get("viewCount", 0)),
             "likes": int(stats.get("likeCount", 0)),
